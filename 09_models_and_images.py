@@ -11,13 +11,15 @@ from PIL import Image
 os.environ['SDL_WINDOWS_DPI_AWARENESS'] = 'permonitorv2'
 
 pygame.init()
-pygame.display.set_mode((800, 800), flags=pygame.OPENGL | pygame.DOUBLEBUF, vsync=True)
+pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3)
+pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 3)
+pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
 
+pygame.display.set_mode((800, 800), flags=pygame.OPENGL | pygame.DOUBLEBUF, vsync=True)
 
 class ImageTexture:
     def __init__(self, path):
         self.ctx = moderngl.get_context()
-
         img = Image.open(path).convert('RGBA')
         self.texture = self.ctx.texture(img.size, 4, img.tobytes())
         self.sampler = self.ctx.sampler(texture=self.texture)
@@ -25,17 +27,14 @@ class ImageTexture:
     def use(self):
         self.sampler.use()
 
-
 class ModelGeometry:
     def __init__(self, path):
         self.ctx = moderngl.get_context()
-
         obj = Obj.open(path)
         self.vbo = self.ctx.buffer(obj.pack('vx vy vz nx ny nz tx ty'))
 
     def vertex_array(self, program):
         return self.ctx.vertex_array(program, [(self.vbo, '3f 12x 2f', 'in_vertex', 'in_uv')])
-
 
 class Mesh:
     def __init__(self, program, geometry, texture=None):
@@ -55,7 +54,6 @@ class Mesh:
         self.vao.program['scale'] = scale
         self.vao.render()
 
-
 class Scene:
     def __init__(self):
         self.ctx = moderngl.get_context()
@@ -68,9 +66,9 @@ class Scene:
                 uniform vec3 position;
                 uniform float scale;
 
-                layout (location = 0) in vec3 in_vertex;
-                layout (location = 1) in vec3 in_normal;
-                layout (location = 2) in vec2 in_uv;
+                in vec3 in_vertex;
+                in vec3 in_normal;
+                in vec2 in_uv;
 
                 out vec3 v_vertex;
                 out vec3 v_normal;
@@ -95,7 +93,7 @@ class Scene:
                 in vec3 v_normal;
                 in vec2 v_uv;
 
-                layout (location = 0) out vec4 out_color;
+                out vec4 out_color;
 
                 void main() {
                     out_color = vec4(color, 1.0);
@@ -106,19 +104,27 @@ class Scene:
             ''',
         )
 
-        self.texture = ImageTexture('examples/data/textures/crate.png')
-
-        self.car_geometry = ModelGeometry('examples/data/models/lowpoly_toy_car.obj')
+        self.texture = ImageTexture('itesm.jpg')
+        self.car_geometry = ModelGeometry('lowpoly_toy_car.obj')
         self.car = Mesh(self.program, self.car_geometry)
-
-        self.crate_geometry = ModelGeometry('examples/data/models/crate.obj')
+        self.crate_geometry = ModelGeometry('crate.obj')
         self.crate = Mesh(self.program, self.crate_geometry, self.texture)
+
+    def perspective(self, fov, aspect, near, far):
+        f = 1.0 / math.tan(fov / 2.0)
+        return glm.mat4(
+            f / aspect, 0, 0, 0,
+            0, f, 0, 0,
+            0, 0, (far + near) / (near - far), -1,
+            0, 0, (2 * far * near) / (near - far), 0
+        )
 
     def camera_matrix(self):
         now = pygame.time.get_ticks() / 1000.0
         eye = (math.cos(now), math.sin(now), 0.5)
-        proj = glm.perspective(45.0, 1.0, 0.1, 1000.0)
-        look = glm.lookAt(eye, (0.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+
+        proj = self.perspective(glm.radians(45.0), 800 / 800, 0.1, 1000.0)
+        look = glm.lookAt(glm.vec3(*eye), glm.vec3(0.0, 0.0, 0.0), glm.vec3(0.0, 0.0, 1.0))
         return proj * look
 
     def render(self):
@@ -133,7 +139,6 @@ class Scene:
         self.crate.render((0.0, 0.0, 0.0), (1.0, 1.0, 1.0), 0.2)
         self.car.render((0.4, 0.0, 0.0), (0.0, 0.0, 1.0), 0.2)
 
-
 scene = Scene()
 
 while True:
@@ -143,5 +148,4 @@ while True:
             sys.exit()
 
     scene.render()
-
     pygame.display.flip()
